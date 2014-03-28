@@ -1,0 +1,7 @@
+pod "TLDataManager", :path => "../TLDataManager.podspec"
+
+target "Demo" do
+end
+
+target "DemoTests" do
+end
