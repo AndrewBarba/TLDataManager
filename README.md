@@ -18,7 +18,7 @@ it simply add the following line to your Podfile:
 
 ## Author
 
-Andrew Barba, abarba.77@gmail.com
+Andrew Barba, andrew@tablelistapp.com
 
 ## License
 
