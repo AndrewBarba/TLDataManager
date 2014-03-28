@@ -7,7 +7,57 @@
 
 To run the example project; clone the repo, and run `pod install` from the Example directory first.
 
+#### Static Singleton
+
+The singleton is useful for managing a single CoreData stack for your application. For most applications, one CoreData stack is sufficient.
+
+    [TLDataManager setDatabaseName:@"MY_DB_NAME" linkedToModel:@"MY_MODEL_NAME"];
+    [TLDataManager sharedManager];
+
+#### Initialization
+
+For applications that require multiple CoreData stacks, you can initalize your own TLDataManager instance.
+    
+    ```
+    // create the manager
+    TLDataManager *manager = [[TLDataManager alloc] initWithDatabaseName:@"MY_DB_NAME" 
+                                                           linkedToModel:@"MY_MODEL_NAME"];
+
+    ...
+
+    // do something with the main context
+    [manager.mainContext ...]
+    ```
+
+#### Import Data
+
+Importing data on a background thread is easy if you follow a few simple rules.
+
+    ```
+    // reference the manager
+    TLDataManager *manager = [TLDataManager sharedManager];
+    
+    // import data and pass in block to be executed on abackground thread
+    // there is a reference to a background context that should be used for importing data
+    [manager importData:^(NSManagedObjectContext *context){
+        
+        // perform long import
+        NSCustomManagedObject *object = [NSCustomManagedObject longImportInContext:context];
+
+        // return block to be called on main thread
+        return ^{
+            // reference main context
+            NSManagedObjectContext *mainContext = manager.mainContext;
+            // reference imported object(s) on main thread
+            NSCustomManagedObject *newObject = [context objectWithID:object.objectID];
+            // ... callback with newObject on main thread ...
+        }
+    }];
+    ```
+
 ## Requirements
+
+iOS 6.1 or later
 
 ## Installation
 
