@@ -23,7 +23,7 @@ For applications that require multiple CoreData stacks, you can initalize your o
 ```Objective-C:
 // create the manager
 TLDataManager *manager = [[TLDataManager alloc] initWithDatabaseName:@"MY_DB_NAME" 
-                                                       linkedToModel:@"MY_MODEL_NAME"];g
+                                                       linkedToModel:@"MY_MODEL_NAME"];
 
 // do something with the main context
 [manager.mainContext ...]
