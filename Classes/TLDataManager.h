@@ -35,7 +35,7 @@ typedef TLBlock (^TLImportBlock) (NSManagedObjectContext *importContext);
  * the main thread, and one background `NSManagedObjectContext` on a background thread.
  *
  * The master context is connected to a single `NSPersistentStoreCoordinator` and writes
- * all changes to disk on a abckground thread to keep the main thread free. 
+ * all changes to disk on a abckground thread to keep the main thread free.
  *
  * The main context is a child of the master context and is exposed for UI purposes.
  * `NSfetchedResutlsController` should reference the main context
@@ -54,7 +54,7 @@ typedef TLBlock (^TLImportBlock) (NSManagedObjectContext *importContext);
  */
 
 /**
- * Sets the database name to store on disk and the model to look up for the 
+ * Sets the database name to store on disk and the model to look up for the
  * database. This only affects the singleton sharedManager and must be called
  * before accessing the sharedManager
  *
@@ -78,7 +78,7 @@ typedef TLBlock (^TLImportBlock) (NSManagedObjectContext *importContext);
  */
 
 /**
- * Returns a reference to the ManagedObjectContext on the main thread. This 
+ * Returns a reference to the ManagedObjectContext on the main thread. This
  * context should be used for UI purposes
  */
 @property (nonatomic, strong, readonly) NSManagedObjectContext *mainContext;
@@ -92,12 +92,12 @@ typedef TLBlock (^TLImportBlock) (NSManagedObjectContext *importContext);
 /** Imports data into the database on a background thread.
  *
  * Use this method to begin importing data into the database.
- * Pass in a block that does some importing and then return a block to be called 
- * when finished. The returned block will be called on the main thread after the 
+ * Pass in a block that does some importing and then return a block to be called
+ * when finished. The returned block will be called on the main thread after the
  * imports are complete.
  *
- * @param importBlock A block that accepts a managed context which should be used 
- * for importing data and returns a block that should be called on the main thread 
+ * @param importBlock A block that accepts a managed context which should be used
+ * for importing data and returns a block that should be called on the main thread
  * when importing is complete
  */
 - (void)importData:(TLImportBlock)importBlock;
@@ -122,7 +122,7 @@ typedef TLBlock (^TLImportBlock) (NSManagedObjectContext *importContext);
 
 /** Static singleton
  *
- * @warning When using the singleton instance you must call 
+ * @warning When using the singleton instance you must call
  * +setDatabaseName:linkedToModel: before referencing the sharedManager.
  */
 + (instancetype)sharedManager;

@@ -2,35 +2,15 @@
 //  TLDataManager.m
 //  Tablelist
 //
-//  Created by Andrew Barba <andrew@tablelistapp.com>
-//  Copyright (c) 2014 Tablelist Inc.
-//
-//  Permission is hereby granted, free of charge, to any person obtaining a copy
-//  of this software and associated documentation files (the "Software"), to
-//  deal in the Software without restriction, including without limitation the
-//  rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
-//  sell copies of the Software, and to permit persons to whom the Software is
-//  furnished to do so, subject to the following conditions:
-//
-//  The above copyright notice and this permission notice shall be included in
-//  all copies or substantial portions of the Software.
-//
-//  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-//  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-//  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-//  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-//  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-//  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-//  DEALINGS IN THE SOFTWARE.
+//  Created by Andrew Barba on 3/28/14.
+//  Copyright (c) 2014 Tablelist LLC. All rights reserved.
 //
 
 #import "TLDataManager.h"
 
+#define TL_SAVE_INTERVAL 120
+
 @interface TLDataManager() {
-    
-    // vars
-    NSString *_databaseName;
-    NSString *_modelName;
     
     // store
     NSPersistentStoreCoordinator *_persistentStoreCoordinator;
@@ -43,6 +23,12 @@
     NSManagedObjectContext *_masterContext;
     NSManagedObjectContext *_mainContext;
     NSManagedObjectContext *_backgroundContext;
+    
+    // vars
+    NSString *_databaseName;
+    NSString *_modelName;
+    NSDate *_lastSave;
+    BOOL _isSaving;
 }
 
 @end
@@ -79,6 +65,9 @@ static NSString *TLDatabaseModelName = nil;
 - (NSURL *)persistentStoreURL
 {
     NSString *name = [_databaseName copy];
+    if ([name rangeOfString:@".sqlite"].location == NSNotFound) {
+        name = [name stringByAppendingString:@".sqlite"];
+    }
     NSURL *documentDirectory = [[[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask] lastObject];
     return [documentDirectory URLByAppendingPathComponent:name];
 }
@@ -108,7 +97,9 @@ static NSString *TLDatabaseModelName = nil;
 {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        _masterContext = [self _backgroundContextWithParent:nil];
+        _masterContext = [self _contextWithConcurrencyType:NSPrivateQueueConcurrencyType
+                                             parentContext:nil
+                                               undoManager:nil];
         [_masterContext setPersistentStoreCoordinator:[self persistentStoreCoordinator]];
     });
     return _masterContext;
@@ -118,9 +109,9 @@ static NSString *TLDatabaseModelName = nil;
 {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        _mainContext = [[NSManagedObjectContext alloc] initWithConcurrencyType:NSMainQueueConcurrencyType];
-        [_mainContext setUndoManager:nil];
-        [_mainContext setParentContext:[self masterContext]];
+        _mainContext = [self _contextWithConcurrencyType:NSMainQueueConcurrencyType
+                                           parentContext:[self masterContext]
+                                             undoManager:nil];
     });
     return _mainContext;
 }
@@ -129,35 +120,79 @@ static NSString *TLDatabaseModelName = nil;
 {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        _backgroundContext = [self _backgroundContextWithParent:[self mainContext]];
+        _backgroundContext = [self _contextWithConcurrencyType:NSPrivateQueueConcurrencyType
+                                                 parentContext:[self mainContext]
+                                                   undoManager:nil];
     });
     return _backgroundContext;
 }
 
-- (NSManagedObjectContext *)_backgroundContextWithParent:(NSManagedObjectContext *)parentContext
+- (NSManagedObjectContext *)_contextWithConcurrencyType:(NSManagedObjectContextConcurrencyType)concurrencyType
+                                          parentContext:(NSManagedObjectContext *)parentContext
+                                            undoManager:(NSUndoManager *)undoManager
 {
-    NSManagedObjectContext *_context = [[NSManagedObjectContext alloc] initWithConcurrencyType:NSPrivateQueueConcurrencyType];
+    NSManagedObjectContext *_context = [[NSManagedObjectContext alloc] initWithConcurrencyType:concurrencyType];
     if (parentContext) {
         _context.parentContext = parentContext;
     }
-    [_context setUndoManager:nil];
+    [_context setUndoManager:undoManager];
     return _context;
+}
+
+#pragma mark - Importing
+
+- (void)importData:(TLImportBlock)importBlock
+{
+    NSManagedObjectContext *context = [self backgroundContext];
+    
+    [context performBlock:^{
+        
+        // peform the import, copy return block to be called when done
+        TLBlock complete = [importBlock(context) copy];
+        
+        // save the background context and propagate changes up to the main context
+        [context save:nil];
+        
+        // call the completion block from the main context
+        [self.mainContext performBlock:^{
+            if (complete) {
+                complete();
+            }
+            
+            // save every x seconds
+            if (TL_SAVE_INTERVAL < fabs([_lastSave timeIntervalSinceNow])) {
+                [self save];
+            }
+        }];
+    }];
 }
 
 #pragma mark - Saving
 
 - (void)save
 {
-    [self.masterContext performBlock:^{
-        NSError *error = nil;
-        NSManagedObjectContext *managedObjectContext = self.masterContext;
-        if (managedObjectContext != nil) {
-            if ([managedObjectContext hasChanges] && ![managedObjectContext save:&error]) {
-                NSLog(@"Unresolved error %@, %@", error, [error userInfo]);
-            }
+    if (_isSaving) return;
+    _isSaving = YES;
+    
+    [_mainContext performBlock:^{
+        if ([_mainContext hasChanges]) {
+            [_mainContext save:nil];
         }
+        [_masterContext performBlock:^{
+            if ([_masterContext hasChanges]) {
+                NSError *error = nil;
+                if (![_masterContext save:&error]) {
+                    NSLog(@"Unresolved error %@, %@", error, [error userInfo]);
+                } else {
+                    _lastSave = [NSDate date];
+                }
+            }
+            _isSaving = NO;
+        }];
     }];
 }
+
+#pragma mark - Reset
 
 - (BOOL)reset
 {
@@ -203,33 +238,17 @@ static NSString *TLDatabaseModelName = nil;
     return success;
 }
 
-#pragma mark - Importing
+#pragma mark - Notifications
 
-- (void)importData:(TLImportBlock)importBlock
+- (void)_listen
 {
-    NSManagedObjectContext *context = [self backgroundContext];
-    
-    [context performBlock:^{
-        
-        // peform the import, copy return block to be called when done
-        TLBlock complete = [importBlock(context) copy];
-        
-        // save the background context and propagate changes up to the main context
-        [context save:nil];
-        
-        // call the completion block from the main context
-        [self.mainContext performBlock:^{
-            if (complete) {
-                complete();
-            }
-            
-            // save main context
-            [self.mainContext save:nil];
-            
-            // save master context
-            [self save];
-        }];
-    }];
+    __weak typeof(self) _self = self;
+    [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationWillResignActiveNotification
+                                                      object:nil
+                                                       queue:[NSOperationQueue mainQueue]
+                                                  usingBlock:^(NSNotification *notification){
+                                                      [_self save];
+                                                  }];
 }
 
 #pragma mark - Initialization
@@ -237,7 +256,7 @@ static NSString *TLDatabaseModelName = nil;
 - (void)_start
 {
     if (!_databaseName || !_modelName) {
-        [NSException raise:@"Database name and model not set. [TLDataManager setDatabaseName:] must be called before accessing shared manager."
+        [NSException raise:@"Database name and model not set. setDatabaseName:linkedToModel: must be called before accessing shared manager."
                     format:nil];
         return;
     }
@@ -246,6 +265,8 @@ static NSString *TLDatabaseModelName = nil;
     if (!_persistentStore) {
         [self reset];
     }
+    
+    _lastSave = [NSDate date];
 }
 
 - (id)init
@@ -261,6 +282,7 @@ static NSString *TLDatabaseModelName = nil;
         _databaseName = databaseName;
         _modelName = modelName;
         [self _start];
+        [self _listen];
     }
     return self;
 }
