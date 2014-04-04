@@ -261,11 +261,15 @@ static NSString *TLDatabaseModelName = nil;
         return;
     }
     
+    // load everything
     [self mainContext];
-    if (!_persistentStore) {
+    
+    // check if store could not load
+    if (!_persistentStoreCoordinator.persistentStores.count == 0) {
         [self reset];
     }
     
+    // consider this a save
     _lastSave = [NSDate date];
 }
 
