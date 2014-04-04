@@ -8,7 +8,10 @@
 
 #import "TLDataManager.h"
 
-#define TL_SAVE_INTERVAL 120
+// static constants
+static NSString   *TLDatabaseName      = @"TLCoreDataDatabase";
+static NSString   *TLDatabaseModelName = @"Model";
+static NSInteger   TLSaveInterval      = 120;
 
 @interface TLDataManager() {
     
@@ -28,13 +31,11 @@
     NSString *_databaseName;
     NSString *_modelName;
     NSDate *_lastSave;
+    NSInteger _saveInterval;
     BOOL _isSaving;
 }
 
 @end
-
-static NSString *TLDatabaseName = nil;
-static NSString *TLDatabaseModelName = nil;
 
 @implementation TLDataManager
 
@@ -48,8 +49,7 @@ static NSString *TLDatabaseModelName = nil;
 
 - (NSPersistentStoreCoordinator *)persistentStoreCoordinator
 {
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
+    if (!_persistentStoreCoordinator) {
         NSURL *storeURL = [self persistentStoreURL];
         NSDictionary *options = [self persistentStoreOptions];
         _persistentStoreCoordinator = [[NSPersistentStoreCoordinator alloc] initWithManagedObjectModel:[self managedObjectModel]];
@@ -58,7 +58,7 @@ static NSString *TLDatabaseModelName = nil;
                                                                                URL:storeURL
                                                                            options:options
                                                                              error:nil];
-    });
+    };
     return _persistentStoreCoordinator;
 }
 
@@ -82,12 +82,11 @@ static NSString *TLDatabaseModelName = nil;
 
 - (NSManagedObjectModel *)managedObjectModel
 {
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
+    if (!_managedObjectModel) {
         NSString *modelName = [_modelName copy];
         NSURL *modelURL = [[NSBundle mainBundle] URLForResource:modelName withExtension:@"momd"];
         _managedObjectModel = [[NSManagedObjectModel alloc] initWithContentsOfURL:modelURL];
-    });
+    };
     return _managedObjectModel;
 }
 
@@ -95,35 +94,32 @@ static NSString *TLDatabaseModelName = nil;
 
 - (NSManagedObjectContext *)masterContext
 {
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
+    if (!_masterContext) {
         _masterContext = [self _contextWithConcurrencyType:NSPrivateQueueConcurrencyType
                                              parentContext:nil
                                                undoManager:nil];
         [_masterContext setPersistentStoreCoordinator:[self persistentStoreCoordinator]];
-    });
+    };
     return _masterContext;
 }
 
 - (NSManagedObjectContext *)mainContext
 {
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
+    if (!_mainContext) {
         _mainContext = [self _contextWithConcurrencyType:NSMainQueueConcurrencyType
                                            parentContext:[self masterContext]
                                              undoManager:nil];
-    });
+    };
     return _mainContext;
 }
 
 - (NSManagedObjectContext *)backgroundContext
 {
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
+    if (!_backgroundContext) {
         _backgroundContext = [self _contextWithConcurrencyType:NSPrivateQueueConcurrencyType
                                                  parentContext:[self mainContext]
                                                    undoManager:nil];
-    });
+    };
     return _backgroundContext;
 }
 
@@ -160,7 +156,7 @@ static NSString *TLDatabaseModelName = nil;
             }
             
             // save every x seconds
-            if (TL_SAVE_INTERVAL < fabs([_lastSave timeIntervalSinceNow])) {
+            if (_saveInterval < fabs([_lastSave timeIntervalSinceNow])) {
                 [self save];
             }
         }];
@@ -265,7 +261,7 @@ static NSString *TLDatabaseModelName = nil;
     [self mainContext];
     
     // check if store could not load
-    if (!_persistentStoreCoordinator.persistentStores.count == 0) {
+    if (!_persistentStore || !_persistentStoreCoordinator.persistentStores || !_persistentStoreCoordinator.persistentStores.count) {
         [self reset];
     }
     
@@ -285,6 +281,7 @@ static NSString *TLDatabaseModelName = nil;
     if (self) {
         _databaseName = databaseName;
         _modelName = modelName;
+        _saveInterval = TLSaveInterval;
         [self _start];
         [self _listen];
     }
