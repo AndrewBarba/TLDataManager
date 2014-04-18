@@ -81,7 +81,12 @@ typedef TLBlock (^TLImportBlock) (NSManagedObjectContext *importContext);
  * Returns a reference to the ManagedObjectContext on the main thread. This
  * context should be used for UI purposes
  */
-@property (nonatomic, strong, readonly) NSManagedObjectContext *mainContext;
+- (NSManagedObjectContext *)mainContext;
+
+/**
+ * Returns a reference to a ManagedObjectContext on a background thread.
+ */
+- (NSManagedObjectContext *)backgroundContext;
 
 
 /**-----------------------------------------------------------------------------

@@ -11,7 +11,7 @@
 // static constants
 static NSString   *TLDatabaseName      = @"TLCoreDataDatabase";
 static NSString   *TLDatabaseModelName = @"Model";
-static NSInteger   TLSaveInterval      = 120;
+static NSInteger   TLSaveInterval      = 60;
 
 @interface TLDataManager() {
     
@@ -25,7 +25,6 @@ static NSInteger   TLSaveInterval      = 120;
     // contexts
     NSManagedObjectContext *_masterContext;
     NSManagedObjectContext *_mainContext;
-    NSManagedObjectContext *_backgroundContext;
     
     // vars
     NSString *_databaseName;
@@ -115,12 +114,9 @@ static NSInteger   TLSaveInterval      = 120;
 
 - (NSManagedObjectContext *)backgroundContext
 {
-    if (!_backgroundContext) {
-        _backgroundContext = [self _contextWithConcurrencyType:NSPrivateQueueConcurrencyType
-                                                 parentContext:[self mainContext]
-                                                   undoManager:nil];
-    };
-    return _backgroundContext;
+    return [self _contextWithConcurrencyType:NSPrivateQueueConcurrencyType
+                               parentContext:[self mainContext]
+                                 undoManager:nil];
 }
 
 - (NSManagedObjectContext *)_contextWithConcurrencyType:(NSManagedObjectContextConcurrencyType)concurrencyType
@@ -144,7 +140,7 @@ static NSInteger   TLSaveInterval      = 120;
     [context performBlock:^{
         
         // peform the import, copy return block to be called when done
-        TLBlock complete = [importBlock(context) copy];
+        TLBlock complete = importBlock(context);
         
         // save the background context and propagate changes up to the main context
         [context save:nil];
@@ -221,15 +217,17 @@ static NSInteger   TLSaveInterval      = 120;
         }
     }
     
-    // add new store
-    _persistentStore = [coordinator addPersistentStoreWithType:NSSQLiteStoreType
-                                                 configuration:nil
-                                                           URL:storeURL
-                                                       options:[self persistentStoreOptions]
-                                                         error:nil];
-    
     // unlock
     [masterContext unlock];
+    
+    // reset everything
+    _mainContext = nil;
+    _masterContext = nil;
+    _persistentStoreCoordinator = nil;
+    _managedObjectModel = nil;
+    
+    // bring everything back
+    [self mainContext];
     
     return success;
 }
@@ -287,6 +285,8 @@ static NSInteger   TLSaveInterval      = 120;
     }
     return self;
 }
+
+#pragma mark - Static Instance
 
 + (instancetype)sharedManager
 {
