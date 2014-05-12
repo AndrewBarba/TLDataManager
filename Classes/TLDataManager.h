@@ -88,6 +88,12 @@ typedef TLBlock (^TLImportBlock) (NSManagedObjectContext *importContext);
  */
 - (NSManagedObjectContext *)backgroundContext;
 
+/**
+ * Returns a new ManagedObjectContext
+ */
++ (NSManagedObjectContext *)contextWithConcurrencyType:(NSManagedObjectContextConcurrencyType)concurrencyType
+                                         parentContext:(NSManagedObjectContext *)parentContext
+                                           undoManager:(NSUndoManager *)undoManager;
 
 /**-----------------------------------------------------------------------------
  * @name Import Data
@@ -107,16 +113,25 @@ typedef TLBlock (^TLImportBlock) (NSManagedObjectContext *importContext);
  */
 - (void)importData:(TLImportBlock)importBlock;
 
+/**
+ * The number of active import operations
+ */
+- (NSUInteger)activeOperations;
+
 
 /**-----------------------------------------------------------------------------
  * @name Manage Data
  * -----------------------------------------------------------------------------
  */
 
-/** Saves the master context and writes to disk */
+/**
+ * Saves the master context and writes to disk
+ */
 - (void)save;
 
-/** Resets the persistant store coordinator and rebuilds the object model */
+/**
+ * Resets the persistant store coordinator and rebuilds the object model
+ */
 - (BOOL)reset;
 
 

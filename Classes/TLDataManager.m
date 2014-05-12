@@ -3,7 +3,7 @@
 //  Tablelist
 //
 //  Created by Andrew Barba on 3/28/14.
-//  Copyright (c) 2014 Tablelist LLC. All rights reserved.
+//  Copyright (c) 2014 Tablelist, Inc. All rights reserved.
 //
 
 #import "TLDataManager.h"
@@ -11,7 +11,7 @@
 // static constants
 static NSString   *TLDatabaseName      = @"TLCoreDataDatabase";
 static NSString   *TLDatabaseModelName = @"Model";
-static NSInteger   TLSaveInterval      = 60;
+static double      TLSaveInterval      = 10.0;
 
 @interface TLDataManager() {
     
@@ -25,12 +25,14 @@ static NSInteger   TLSaveInterval      = 60;
     // contexts
     NSManagedObjectContext *_masterContext;
     NSManagedObjectContext *_mainContext;
+    NSManagedObjectContext *_backgroundContext;
     
     // vars
     NSString *_databaseName;
     NSString *_modelName;
     NSDate *_lastSave;
     NSInteger _saveInterval;
+    NSUInteger _activeOperations;
     BOOL _isSaving;
 }
 
@@ -94,9 +96,9 @@ static NSInteger   TLSaveInterval      = 60;
 - (NSManagedObjectContext *)masterContext
 {
     if (!_masterContext) {
-        _masterContext = [self _contextWithConcurrencyType:NSPrivateQueueConcurrencyType
-                                             parentContext:nil
-                                               undoManager:nil];
+        _masterContext = [[self class] contextWithConcurrencyType:NSPrivateQueueConcurrencyType
+                                                    parentContext:nil
+                                                      undoManager:nil];
         [_masterContext setPersistentStoreCoordinator:[self persistentStoreCoordinator]];
     };
     return _masterContext;
@@ -105,23 +107,26 @@ static NSInteger   TLSaveInterval      = 60;
 - (NSManagedObjectContext *)mainContext
 {
     if (!_mainContext) {
-        _mainContext = [self _contextWithConcurrencyType:NSMainQueueConcurrencyType
-                                           parentContext:[self masterContext]
-                                             undoManager:nil];
+        _mainContext = [[self class] contextWithConcurrencyType:NSMainQueueConcurrencyType
+                                                  parentContext:[self masterContext]
+                                                    undoManager:nil];
     };
     return _mainContext;
 }
 
 - (NSManagedObjectContext *)backgroundContext
 {
-    return [self _contextWithConcurrencyType:NSPrivateQueueConcurrencyType
-                               parentContext:[self mainContext]
-                                 undoManager:nil];
+    if (!_backgroundContext) {
+        _backgroundContext = [[self class] contextWithConcurrencyType:NSPrivateQueueConcurrencyType
+                                                        parentContext:[self mainContext]
+                                                          undoManager:nil];
+    }
+    return _backgroundContext;
 }
 
-- (NSManagedObjectContext *)_contextWithConcurrencyType:(NSManagedObjectContextConcurrencyType)concurrencyType
-                                          parentContext:(NSManagedObjectContext *)parentContext
-                                            undoManager:(NSUndoManager *)undoManager
++ (NSManagedObjectContext *)contextWithConcurrencyType:(NSManagedObjectContextConcurrencyType)concurrencyType
+                                         parentContext:(NSManagedObjectContext *)parentContext
+                                           undoManager:(NSUndoManager *)undoManager
 {
     NSManagedObjectContext *_context = [[NSManagedObjectContext alloc] initWithConcurrencyType:concurrencyType];
     if (parentContext) {
@@ -135,6 +140,8 @@ static NSInteger   TLSaveInterval      = 60;
 
 - (void)importData:(TLImportBlock)importBlock
 {
+    _activeOperations++;
+    
     NSManagedObjectContext *context = [self backgroundContext];
     
     [context performBlock:^{
@@ -146,17 +153,37 @@ static NSInteger   TLSaveInterval      = 60;
         [context save:nil];
         
         // call the completion block from the main context
-        [self.mainContext performBlock:^{
+        [self.mainContext performBlockAndWait:^{
             if (complete) {
                 complete();
             }
             
-            // save every x seconds
-            if (_saveInterval < fabs([_lastSave timeIntervalSinceNow])) {
-                [self save];
+            // decrease active ops
+            _activeOperations--;
+            
+            // are all operations finished
+            if (_activeOperations == 0) {
+                
+                // ditch the background context
+                _backgroundContext = nil;
+                
+                // save to disk if needed
+                if (_saveInterval < fabs([_lastSave timeIntervalSinceNow])) {
+                    [self save];
+                }
             }
         }];
     }];
+}
+
+- (NSUInteger)activeOperations
+{
+    return _activeOperations;
+}
+
+- (BOOL)isImportingData
+{
+    return _activeOperations > 0;
 }
 
 #pragma mark - Saving
@@ -188,6 +215,8 @@ static NSInteger   TLSaveInterval      = 60;
 
 - (BOOL)reset
 {
+    if ([self isImportingData]) return NO;
+    
     BOOL success = YES;
     
     NSURL *storeURL = [self persistentStoreURL];
@@ -221,6 +250,7 @@ static NSInteger   TLSaveInterval      = 60;
     [masterContext unlock];
     
     // reset everything
+    _backgroundContext = nil;
     _mainContext = nil;
     _masterContext = nil;
     _persistentStoreCoordinator = nil;
@@ -280,6 +310,7 @@ static NSInteger   TLSaveInterval      = 60;
         _databaseName = databaseName;
         _modelName = modelName;
         _saveInterval = TLSaveInterval;
+        _activeOperations = 0;
         [self _start];
         [self _listen];
     }
