@@ -37,7 +37,7 @@ Importing data on a background thread is easy if you follow a few simple rules.
 // reference the manager
 TLDataManager *manager = [TLDataManager sharedManager];
 
-// import data and pass in block to be executed on abackground thread
+// import data and pass in block to be executed on a background thread
 // there is a reference to a background context that should be used for importing data
 [manager importData:^(NSManagedObjectContext *context){
     
@@ -68,7 +68,7 @@ it simply add the following line to your Podfile:
 
 ## Author
 
-Andrew Barba, andrew@tablelistapp.com
+Andrew Barba, andrew@tablelist.com
 
 ## License
 
